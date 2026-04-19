@@ -4,9 +4,9 @@ import path from "path";
 import fs from "fs";
 import type {
   RecordOpenBody,
-  RecordingStatus,
   RecordResult,
-} from "@qa-buddy/shared-types";
+  RecordingStatus,
+} from "../contracts/record.contract";
 
 const router = Router();
 const RECORDINGS_DIR = "src/recordings";
