@@ -2,11 +2,11 @@
   "name": "qa-buddy-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "dist/server.ts",
+  "main": "dist/server.js",
   "scripts": {
     "dev": "node --import tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.ts"
+    "start": "node dist/server.js"
   },
   "keywords": [],
   "author": "",

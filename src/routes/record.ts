@@ -1,92 +1,41 @@
 import { Router, Request, Response } from "express";
-import { spawn, ChildProcess } from "child_process";
-import path from "path";
-import fs from "fs";
+import { requireIntegrationSecret } from "../integration-secret.middleware.js";
+import { isRecording, startRecording } from "../recording-runner.js";
+import { parseRecordingStartRequest } from "../recording-start.validation.js";
 import type {
-  RecordOpenBody,
-  RecordResult,
-  RecordingStatus,
-} from "../contracts/record.contract";
+  RecordingStartRequest,
+  RecordingStartResponse,
+} from "../contracts/record.contract.js";
+
+type ErrorResponse = { error: string; details?: string[] };
+type StartRecordingResponse = RecordingStartResponse | ErrorResponse;
 
 const router = Router();
-const RECORDINGS_DIR = "src/recordings";
 
-let phase: "idle" | "recording" = "idle";
-let codegenProcess: ChildProcess | null = null;
-let lastResult: RecordResult | null = null;
-
-// POST /record/open — opens Playwright codegen and streams status via SSE
-// Sends two events: 'recording' on start, 'idle' when QA closes the browser
+// server.ts mounts this router at /api/recordings.
+// Full endpoint: POST /api/recordings/start
 router.post(
-  "/open",
-  (req: Request<{}, {}, RecordOpenBody>, res: Response) => {
-    const { url } = req.body;
+  "/start",
+  requireIntegrationSecret,
+  (
+    req: Request<{}, StartRecordingResponse, RecordingStartRequest>,
+    res: Response<StartRecordingResponse>,
+  ) => {
+    const parsed = parseRecordingStartRequest(req.body);
 
-    if (!url) {
-      return res.status(400).json({ error: "URL is required" });
+    if (!parsed.value) {
+      return res.status(400).json({
+        error: "Invalid recording start request",
+        details: parsed.errors,
+      });
+    }
+    console.log("Received recording start request:", parsed.value);
+    if (isRecording()) {
+      return res.status(409).json({ error: "Already recording" });
     }
 
-    if (phase === "recording") {
-      return res.status(400).json({ error: "Already recording" });
-    }
-
-    // SSE headers — keeps the connection open so we can push events
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders();
-
-    const sendEvent = (data: RecordingStatus) =>
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
-
-    fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
-    const outputFile = path.join(RECORDINGS_DIR, `recording-${Date.now()}.ts`);
-
-    lastResult = null;
-    phase = "recording";
-
-    codegenProcess = spawn(
-      "npx",
-      ["playwright", "codegen", "--output", outputFile, url],
-      { stdio: "inherit", shell: true }
-    );
-
-    sendEvent({ phase: "recording", hasResult: false });
-
-    codegenProcess.on("close", () => {
-      codegenProcess = null;
-      phase = "idle";
-
-      // small delay to let Playwright finish flushing the file to disk
-      setTimeout(() => {
-        console.log("[record] process closed, checking file:", outputFile);
-        console.log("[record] file exists:", fs.existsSync(outputFile));
-
-        if (fs.existsSync(outputFile)) {
-          lastResult = {
-            content: fs.readFileSync(outputFile, "utf-8"),
-            file: outputFile,
-          };
-          console.log("[record] file read, length:", lastResult.content.length);
-        }
-
-        sendEvent({ phase: "idle", hasResult: lastResult !== null });
-        res.end();
-      }, 500);
-    });
-  }
-);
-
-// GET /record/result — returns the generated script after QA closes the browser
-router.get(
-  "/result",
-  (_req: Request, res: Response<RecordResult | { error: string }>) => {
-    if (!lastResult) {
-      return res.status(404).json({ error: "No result available yet" });
-    }
-
-    res.json(lastResult);
-  }
+    return res.status(200).json(startRecording(parsed.value));
+  },
 );
 
 export default router;
