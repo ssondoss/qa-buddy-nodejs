@@ -5,9 +5,9 @@ import { config } from "./config.js";
 import { parseRecordingSteps } from "./recording-parser.js";
 import type {
   RecordingPhase,
+  RecordingCompleteRequest,
   RecordingStartRequest,
   RecordingStartResponse,
-  WorkflowVersionCompleteRequest,
 } from "./contracts/record.contract.js";
 
 let phase: RecordingPhase = "idle";
@@ -28,7 +28,7 @@ export const startRecording = (
 
   let completionHandled = false;
 
-  const completeOnce = (request: WorkflowVersionCompleteRequest) => {
+  const completeOnce = (request: RecordingCompleteRequest) => {
     if (completionHandled) {
       return;
     }
@@ -103,7 +103,7 @@ const buildRecordingStartUrl = (recording: RecordingStartRequest) =>
 
 const notifySpringRecordingComplete = async (
   recording: RecordingStartRequest,
-  request: WorkflowVersionCompleteRequest
+  request: RecordingCompleteRequest
 ) => {
   try {
     const response = await fetch(buildCompleteUrl(recording.workflowVersionId), {

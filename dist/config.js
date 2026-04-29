@@ -7,6 +7,6 @@ export const config = {
     recordingsDir: process.env.RECORDINGS_DIR ?? "src/recordings",
     springBaseUrl: process.env.SPRING_BASE_URL ?? "http://localhost:8080",
     recordingCompletePath: process.env.RECORDING_COMPLETE_PATH ??
-        "/api/workflow-versions/{workflowVersionId}/complete",
+        "/api/version/recording/complete/{workflowVersionId}",
     port: Number(process.env.PORT ?? 3000),
 };

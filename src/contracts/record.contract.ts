@@ -52,7 +52,7 @@ export interface WorkflowStepRequest {
   retryCount?: number;
 }
 
-export interface WorkflowVersionCompleteRequest {
+export interface RecordingCompleteRequest {
   status: WorkflowVersionStatus;
   steps: WorkflowStepRequest[];
 }
