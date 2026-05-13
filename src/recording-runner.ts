@@ -21,10 +21,11 @@ export const startRecording = (
   const outputFile = createOutputFile(recording);
 
   phase = "recording";
-  codegenProcess = spawn("npx", buildCodegenArgs(outputFile, recording), {
-    stdio: "inherit",
-    shell: true,
-  });
+  codegenProcess = spawn(
+    "node_modules/.bin/playwright",
+    buildCodegenArgs(outputFile, recording),
+    { stdio: "inherit" }
+  );
 
   let completionHandled = false;
 
@@ -92,7 +93,7 @@ const buildCodegenArgs = (
   outputFile: string,
   recording: RecordingStartRequest
 ) => {
-  const args = ["playwright", "codegen", "--output", outputFile];
+  const args = ["codegen", "--output", outputFile];
   args.push(buildRecordingStartUrl(recording));
 
   return args;

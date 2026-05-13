@@ -14,19 +14,22 @@ router.post("/start", requireExecutionSecret, async (req, res) => {
     }
     try {
         const result = await runExecution(parsed.data);
+        console.log("[execution] result:", JSON.stringify(result, null, 2));
         return res.status(200).json(result);
     }
     catch (error) {
         const now = new Date().toISOString();
         const errorMessage = error instanceof Error ? error.message : String(error);
-        return res.status(200).json({
+        const result = {
             status: "FAILED",
             startedAt: now,
             finishedAt: now,
             errorMessage,
             log: errorMessage,
             stepResults: [],
-        });
+        };
+        console.log("[execution] result:", JSON.stringify(result, null, 2));
+        return res.status(200).json(result);
     }
 });
 export default router;

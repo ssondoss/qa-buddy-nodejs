@@ -17,5 +17,6 @@ export const config = {
     process.env.EXECUTION_SCREENSHOT_PATH ??
     "/api/executions/{executionId}/screenshots",
   executionHeadless: process.env.PLAYWRIGHT_HEADLESS !== "false",
+  executionSlowMo: Number(process.env.PLAYWRIGHT_SLOW_MO ?? 0),
   port: Number(process.env.PORT ?? 3000),
 };

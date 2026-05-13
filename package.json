@@ -5,6 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "node --import tsx src/server.ts",
+    "dev:headed": "PLAYWRIGHT_HEADLESS=false PLAYWRIGHT_SLOW_MO=500 node --import tsx src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
   },

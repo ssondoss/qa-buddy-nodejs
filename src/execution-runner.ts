@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type Locator, type Page } from "playwright";
 import { config } from "./config.js";
 import type {
   ExecutionRunResponse,
@@ -30,7 +30,7 @@ export const runExecution = async (
   let errorMessage: string | null = null;
 
   try {
-    browser = await chromium.launch({ headless: config.executionHeadless });
+    browser = await chromium.launch({ headless: config.executionHeadless, slowMo: config.executionSlowMo });
     const context = await browser.newContext({ baseURL: request.webBaseUrl });
     page = await context.newPage();
 
@@ -134,14 +134,14 @@ const runStepAction = async (
     case "CLICK": {
       const selector = requireValue(step.selector, "selector", step);
       log.push(`Clicking ${selector}`);
-      await page.locator(selector).click({ timeout });
+      await buildLocator(page, selector).click({ timeout });
       return;
     }
 
     case "FILL": {
       const selector = requireValue(step.selector, "selector", step);
       log.push(`Filling ${selector}`);
-      await page.locator(selector).fill(step.value ?? "", { timeout });
+      await buildLocator(page, selector).fill(step.value ?? "", { timeout });
       return;
     }
 
@@ -167,7 +167,7 @@ const runWait = async (
 ) => {
   if (step.selector) {
     log.push(`Waiting for selector ${step.selector}`);
-    await page.locator(step.selector).waitFor({ state: "visible", timeout });
+    await buildLocator(page, step.selector).waitFor({ state: "visible", timeout });
     return;
   }
 
@@ -188,7 +188,7 @@ const runTextAssertion = async (
     step
   );
   const text = step.selector
-    ? await page.locator(step.selector).textContent({ timeout })
+    ? await buildLocator(page, step.selector).textContent({ timeout })
     : await page.locator("body").textContent({ timeout });
 
   log.push(`Asserting text contains ${expectedText}`);
@@ -317,6 +317,77 @@ const buildScreenshotUploadUrl = (executionId: string) => {
     .replace("{executionId}", encodedExecutionId);
 
   return new URL(path, config.springBaseUrl).toString();
+};
+
+const buildLocator = (base: Page | Locator, selector: string): Locator => {
+  const parts = selector.split(" >> ");
+  let locator: Locator | null = null;
+
+  for (const raw of parts) {
+    const part = raw.trim();
+    const parent: Page | Locator = locator ?? base;
+
+    const nthMatch = part.match(/^nth=(-?\d+)$/);
+    if (nthMatch && locator) {
+      locator = locator.nth(parseInt(nthMatch[1]));
+      continue;
+    }
+
+    const roleMatch = part.match(/^role=(\w+)(?:\[name="([^"]+)"\])?(?:\[exact="(true|false)"\])?$/);
+    if (roleMatch) {
+      const role = roleMatch[1] as Parameters<typeof parent.getByRole>[0];
+      const name = roleMatch[2];
+      const exact = roleMatch[3] === "true";
+      locator = name ? parent.getByRole(role, { name, exact }) : parent.getByRole(role);
+      continue;
+    }
+
+    const hasTextMatch = part.match(/^(.+):has-text\("(.+?)"\)$/);
+    if (hasTextMatch) {
+      locator = parent.locator(hasTextMatch[1]).filter({ hasText: hasTextMatch[2] });
+      continue;
+    }
+
+    const testIdMatch = part.match(/^\[data-testid="(.+?)"\]$/);
+    if (testIdMatch) {
+      locator = parent.getByTestId(testIdMatch[1]);
+      continue;
+    }
+
+    const textMatch = part.match(/^text=(.+)$/);
+    if (textMatch) {
+      locator = parent.getByText(textMatch[1]);
+      continue;
+    }
+
+    const labelMatch = part.match(/^\[aria-label="(.+?)"\]$/);
+    if (labelMatch) {
+      locator = parent.getByLabel(labelMatch[1]);
+      continue;
+    }
+
+    const placeholderMatch = part.match(/^\[placeholder="(.+?)"\]$/);
+    if (placeholderMatch) {
+      locator = parent.getByPlaceholder(placeholderMatch[1]);
+      continue;
+    }
+
+    const altMatch = part.match(/^\[alt="(.+?)"\]$/);
+    if (altMatch) {
+      locator = parent.getByAltText(altMatch[1]);
+      continue;
+    }
+
+    const titleMatch = part.match(/^\[title="(.+?)"\]$/);
+    if (titleMatch) {
+      locator = parent.getByTitle(titleMatch[1]);
+      continue;
+    }
+
+    locator = parent.locator(part);
+  }
+
+  return locator ?? base.locator(selector);
 };
 
 const resolveUrl = (value: string | null | undefined, baseUrl: string) =>

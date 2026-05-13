@@ -9,10 +9,7 @@ export const isRecording = () => phase === "recording";
 export const startRecording = (recording) => {
     const outputFile = createOutputFile(recording);
     phase = "recording";
-    codegenProcess = spawn("npx", buildCodegenArgs(outputFile, recording), {
-        stdio: "inherit",
-        shell: true,
-    });
+    codegenProcess = spawn("node_modules/.bin/playwright", buildCodegenArgs(outputFile, recording), { stdio: "inherit" });
     let completionHandled = false;
     const completeOnce = (request) => {
         if (completionHandled) {
@@ -63,7 +60,7 @@ const createOutputFile = (recording) => {
     return path.join(config.recordingsDir, `workflow-${workflowId}-version-${workflowVersionId}-v${recording.versionNumber}-${Date.now()}.ts`);
 };
 const buildCodegenArgs = (outputFile, recording) => {
-    const args = ["playwright", "codegen", "--output", outputFile];
+    const args = ["codegen", "--output", outputFile];
     args.push(buildRecordingStartUrl(recording));
     return args;
 };

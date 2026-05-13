@@ -13,7 +13,7 @@ export const runExecution = async (request) => {
     let stoppedByFailure = false;
     let errorMessage = null;
     try {
-        browser = await chromium.launch({ headless: config.executionHeadless });
+        browser = await chromium.launch({ headless: config.executionHeadless, slowMo: config.executionSlowMo });
         const context = await browser.newContext({ baseURL: request.webBaseUrl });
         page = await context.newPage();
         for (const step of orderedSteps) {
@@ -97,13 +97,13 @@ const runStepAction = async ({ request, page }, step, log) => {
         case "CLICK": {
             const selector = requireValue(step.selector, "selector", step);
             log.push(`Clicking ${selector}`);
-            await page.locator(selector).click({ timeout });
+            await buildLocator(page, selector).click({ timeout });
             return;
         }
         case "FILL": {
             const selector = requireValue(step.selector, "selector", step);
             log.push(`Filling ${selector}`);
-            await page.locator(selector).fill(step.value ?? "", { timeout });
+            await buildLocator(page, selector).fill(step.value ?? "", { timeout });
             return;
         }
         case "WAIT":
@@ -120,7 +120,7 @@ const runStepAction = async ({ request, page }, step, log) => {
 const runWait = async (page, step, timeout, log) => {
     if (step.selector) {
         log.push(`Waiting for selector ${step.selector}`);
-        await page.locator(step.selector).waitFor({ state: "visible", timeout });
+        await buildLocator(page, step.selector).waitFor({ state: "visible", timeout });
         return;
     }
     const waitMs = parsePositiveNumber(step.value) ?? timeout;
@@ -130,7 +130,7 @@ const runWait = async (page, step, timeout, log) => {
 const runTextAssertion = async (page, step, timeout, log) => {
     const expectedText = requireValue(step.expectedValue ?? step.value, "expectedValue", step);
     const text = step.selector
-        ? await page.locator(step.selector).textContent({ timeout })
+        ? await buildLocator(page, step.selector).textContent({ timeout })
         : await page.locator("body").textContent({ timeout });
     log.push(`Asserting text contains ${expectedText}`);
     if (!text?.includes(expectedText)) {
@@ -225,6 +225,64 @@ const buildScreenshotUploadUrl = (executionId) => {
         .replace(":executionId", encodedExecutionId)
         .replace("{executionId}", encodedExecutionId);
     return new URL(path, config.springBaseUrl).toString();
+};
+const buildLocator = (base, selector) => {
+    const parts = selector.split(" >> ");
+    let locator = null;
+    for (const raw of parts) {
+        const part = raw.trim();
+        const parent = locator ?? base;
+        const nthMatch = part.match(/^nth=(-?\d+)$/);
+        if (nthMatch && locator) {
+            locator = locator.nth(parseInt(nthMatch[1]));
+            continue;
+        }
+        const roleMatch = part.match(/^role=(\w+)(?:\[name="([^"]+)"\])?(?:\[exact="(true|false)"\])?$/);
+        if (roleMatch) {
+            const role = roleMatch[1];
+            const name = roleMatch[2];
+            const exact = roleMatch[3] === "true";
+            locator = name ? parent.getByRole(role, { name, exact }) : parent.getByRole(role);
+            continue;
+        }
+        const hasTextMatch = part.match(/^(.+):has-text\("(.+?)"\)$/);
+        if (hasTextMatch) {
+            locator = parent.locator(hasTextMatch[1]).filter({ hasText: hasTextMatch[2] });
+            continue;
+        }
+        const testIdMatch = part.match(/^\[data-testid="(.+?)"\]$/);
+        if (testIdMatch) {
+            locator = parent.getByTestId(testIdMatch[1]);
+            continue;
+        }
+        const textMatch = part.match(/^text=(.+)$/);
+        if (textMatch) {
+            locator = parent.getByText(textMatch[1]);
+            continue;
+        }
+        const labelMatch = part.match(/^\[aria-label="(.+?)"\]$/);
+        if (labelMatch) {
+            locator = parent.getByLabel(labelMatch[1]);
+            continue;
+        }
+        const placeholderMatch = part.match(/^\[placeholder="(.+?)"\]$/);
+        if (placeholderMatch) {
+            locator = parent.getByPlaceholder(placeholderMatch[1]);
+            continue;
+        }
+        const altMatch = part.match(/^\[alt="(.+?)"\]$/);
+        if (altMatch) {
+            locator = parent.getByAltText(altMatch[1]);
+            continue;
+        }
+        const titleMatch = part.match(/^\[title="(.+?)"\]$/);
+        if (titleMatch) {
+            locator = parent.getByTitle(titleMatch[1]);
+            continue;
+        }
+        locator = parent.locator(part);
+    }
+    return locator ?? base.locator(selector);
 };
 const resolveUrl = (value, baseUrl) => new URL(value || "", baseUrl).toString();
 const requireValue = (value, field, step) => {

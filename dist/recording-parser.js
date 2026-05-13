@@ -110,43 +110,103 @@ const createStep = (statement, action, data) => ({
         ...data.meta,
     },
 });
+const methodToSegment = (method, args) => {
+    switch (method) {
+        case "locator": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: m[2], strategy: "locator", type: "selector" } : null;
+        }
+        case "getByTestId": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: `[data-testid="${escapeSelectorValue(m[2])}"]`, strategy: "testId", type: "selector" } : null;
+        }
+        case "getByText": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: `text=${m[2]}`, strategy: "text", type: "selector" } : null;
+        }
+        case "getByRole": {
+            const m = args.match(/(['"`])(.+?)\1(.*)/);
+            if (!m)
+                return null;
+            const name = readNamedOption(m[3], "name");
+            const exactMatch = m[3].match(/exact:\s*(true|false)/);
+            const exact = exactMatch ? exactMatch[1] : null;
+            let value = name ? `role=${m[2]}[name="${name}"]` : `role=${m[2]}`;
+            if (exact !== null)
+                value += `[exact="${exact}"]`;
+            return { value, strategy: "role", type: "selector" };
+        }
+        case "getByLabel": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: `[aria-label="${m[2]}"]`, strategy: "label", type: "selector" } : null;
+        }
+        case "getByPlaceholder": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: `[placeholder="${m[2]}"]`, strategy: "placeholder", type: "selector" } : null;
+        }
+        case "getByAltText": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: `[alt="${m[2]}"]`, strategy: "altText", type: "selector" } : null;
+        }
+        case "getByTitle": {
+            const m = args.match(/(['"`])(.+?)\1/);
+            return m ? { value: `[title="${m[2]}"]`, strategy: "title", type: "selector" } : null;
+        }
+        case "filter": {
+            const m = args.match(/hasText:\s*(['"`])(.+?)\1/);
+            return m ? { value: `:has-text("${m[2]}")`, strategy: "filter", type: "modifier" } : null;
+        }
+        case "nth": {
+            const m = args.match(/(\d+)/);
+            return m ? { value: `nth=${m[1]}`, strategy: "nth", type: "position" } : null;
+        }
+        case "first":
+            return { value: "nth=0", strategy: "nth", type: "position" };
+        case "last":
+            return { value: "nth=-1", strategy: "nth", type: "position" };
+        default:
+            return null;
+    }
+};
 const parseLocator = (expression) => {
-    const testIdMatch = expression.match(/\.getByTestId\((['"`])(.+?)\1\)/);
-    if (testIdMatch) {
-        return {
-            strategy: "testId",
-            value: testIdMatch[2],
-            selector: `[data-testid="${escapeSelectorValue(testIdMatch[2])}"]`,
-        };
+    const selectorParts = [];
+    let currentSelector = null;
+    let lastStrategy = "locator";
+    let lastValue = "";
+    const methodRegex = /\.(\w+)\(([^)]*)\)/g;
+    let match;
+    while ((match = methodRegex.exec(expression)) !== null) {
+        const segment = methodToSegment(match[1], match[2].trim());
+        if (!segment)
+            continue;
+        if (segment.type === "modifier") {
+            if (currentSelector !== null)
+                currentSelector += segment.value;
+        }
+        else if (segment.type === "position") {
+            if (currentSelector !== null) {
+                selectorParts.push(currentSelector);
+                currentSelector = null;
+            }
+            selectorParts.push(segment.value);
+        }
+        else {
+            if (currentSelector !== null)
+                selectorParts.push(currentSelector);
+            currentSelector = segment.value;
+            lastStrategy = segment.strategy;
+            lastValue = segment.value;
+        }
     }
-    const textMatch = expression.match(/\.getByText\((['"`])(.+?)\1\)/);
-    if (textMatch) {
-        return {
-            strategy: "text",
-            value: textMatch[2],
-            selector: `text=${textMatch[2]}`,
-        };
-    }
-    const roleMatch = expression.match(/\.getByRole\((['"`])(.+?)\1(.*)\)/);
-    if (roleMatch) {
-        const role = roleMatch[2];
-        const name = readNamedOption(roleMatch[3], "name");
-        const selector = name ? `role=${role}[name="${name}"]` : `role=${role}`;
-        return {
-            strategy: "role",
-            value: name ?? role,
-            selector,
-        };
-    }
-    const locatorMatch = expression.match(/\.locator\((['"`])(.+?)\1\)/);
-    if (locatorMatch) {
-        return {
-            strategy: "locator",
-            value: locatorMatch[2],
-            selector: locatorMatch[2],
-        };
-    }
-    return undefined;
+    if (currentSelector !== null)
+        selectorParts.push(currentSelector);
+    if (selectorParts.length === 0)
+        return undefined;
+    return {
+        strategy: lastStrategy,
+        value: lastValue,
+        selector: selectorParts.join(" >> "),
+    };
 };
 const readQuotedValue = (rawArgs) => {
     const match = rawArgs.match(/(['"`])(.+?)\1/);
